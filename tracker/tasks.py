@@ -6,21 +6,22 @@ from .models import Item
 
 @shared_task
 def update_prices():
-    items = Item.objects.all()
+    items = Item.objects.filter(active=True)
 
     for item in items:
-        data = crawl(item.url)
-        current_price = data["current_price"]
+        try:
+            data = crawl(item.url)
+            current_price = data["current_price"]
 
-        item_obj = Item.objects.get(id=item.id)
+            if current_price < item.requested_price:
+                # send email notifying eventually
+                pass
 
-        if current_price < item.requested_price:
-            # send email notifying eventually
-            pass
+            item.current_price = current_price
+        except Exception:
+            item.active = False
 
-        item_obj.current_price = current_price
-
-        item_obj.save()
+        item.save()
 
 
 def crawl(url):
@@ -28,9 +29,11 @@ def crawl(url):
     html = urlopen(req).read()
     bs = BeautifulSoup(html, "html.parser")
 
-    if not bs.find("div", {"class": "app-cvip-message-container"}) is None:
-        title = bs.find("h1", id="itemTitle").get_text().replace("Details about", "")
-        price = bs.find("span", id="prcIsum").get_text()
-        clean_price = float(price.strip().replace("US", "").replace("$", ""))
+    if bs.find("div", {"class": "app-cvip-message-container"}):
+        raise Exception
 
-        return {"title": title, "current_price": clean_price}
+    title = bs.find("h1", id="itemTitle").get_text().replace("Details about", "")
+    price = bs.find("span", id="prcIsum").get_text()
+    clean_price = float(price.strip().replace("US", "").replace("$", ""))
+
+    return {"title": title, "current_price": clean_price}
